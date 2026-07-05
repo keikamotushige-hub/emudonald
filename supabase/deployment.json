@@ -1,0 +1,8 @@
+{
+  "game": "emudonald",
+  "supabase_project_id": "lgprkeqxtqwgvqrntfty",
+  "supabase_url": "https://lgprkeqxtqwgvqrntfty.supabase.co",
+  "vercel_url": "https://emudonald.vercel.app",
+  "github": "https://github.com/keikamotushige-hub/emudonald",
+  "note": "Static browser game; scores use localStorage. Supabase project shared with AppForge stack."
+}
