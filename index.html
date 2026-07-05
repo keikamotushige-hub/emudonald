@@ -289,7 +289,8 @@
   </div>
 
   <div id="controls">
-    <button class="ctrl" id="btn-sound">🔊 音声 ON</button>
+    <button class="ctrl" id="btn-sound">🔊 効果音 ON</button>
+    <button class="ctrl" id="btn-music">🎵 音楽 ON</button>
     <button class="ctrl" id="btn-change">🔄 キャラ変更</button>
   </div>
 
@@ -383,7 +384,11 @@
     let comboTimer = null;
     let gameResult = null;
     let soundOn = true;
+    let musicOn = true;
     let audioCtx = null;
+    let bgmGain = null;
+    let bgmTimer = null;
+    let bgmStep = 0;
     let playerThrowReady = true;
     let holdingFire = false;
     let holdFireTimer = null;
@@ -455,7 +460,7 @@
       btn.type = "button";
       btn.className = "char-btn";
       btn.innerHTML = `<span class="emoji">${r.emoji}</span>${r.name}`;
-      btn.onclick = () => startAs(r.id);
+      btn.onclick = () => { ensureAudio(); startBGM(); startAs(r.id); };
       charGrid.appendChild(btn);
     });
 
@@ -498,6 +503,7 @@
       document.getElementById("char-select").classList.add("hidden");
       updateUI();
       ensureAudio();
+      startBGM();
       const p = ROSTER.find(r => r.id === id);
       const proj = p.role === "customer" ? "300円コイン" : "バーガー";
       showToast(`${p.emoji} ${p.name} — ${proj}で店員を倒せ！`);
@@ -520,17 +526,22 @@
         title.textContent = "YOU WIN!";
         msg.textContent = "カウンター向こうの店員2人を倒した！YOU WIN！";
         overlay.classList.remove("lose");
+        if (bgmGain) bgmGain.gain.value = 0.03;
         sfx("win");
       } else {
         title.textContent = "YOU LOSE";
         msg.textContent = "倒されてしまった…もう一度挑戦しよう！";
         overlay.classList.add("lose");
+        if (bgmGain) bgmGain.gain.value = 0.03;
         sfx("lose");
       }
     }
 
     document.getElementById("btn-retry").onclick = () => {
-      if (playerId) startAs(playerId);
+      if (playerId) {
+        if (musicOn) startBGM();
+        startAs(playerId);
+      }
     };
 
     document.getElementById("btn-change").onclick = () => {
@@ -542,10 +553,81 @@
       updateUI();
     };
 
-    // ── 音声 ──
+    // ── 音声 & BGM ──
+    const BGM_BPM = 132;
+    const BGM_STEP = (60 / BGM_BPM) / 2;
+    const BGM_MELODY = [
+      523, 659, 784, 659, 880, 784, 659, 523,
+      587, 659, 784, 880, 988, 880, 659, 587,
+      523, 659, 784, 880, 784, 659, 587, 523,
+      440, 523, 659, 784, 659, 523, 440, 392,
+    ];
+    const BGM_BASS = [130.81, 98, 110, 98, 130.81, 98, 116.54, 98];
+
     function ensureAudio() {
       if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (audioCtx.state === "suspended") audioCtx.resume();
+      if (!bgmGain) {
+        bgmGain = audioCtx.createGain();
+        bgmGain.gain.value = musicOn ? 0.09 : 0;
+        bgmGain.connect(audioCtx.destination);
+      }
+    }
+
+    function playBGMNote(freq, type, dur, vol) {
+      if (!musicOn || !audioCtx || !bgmGain || !freq) return;
+      const t = audioCtx.currentTime;
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, t);
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.92);
+      o.connect(g);
+      g.connect(bgmGain);
+      o.start(t);
+      o.stop(t + dur);
+    }
+
+    function bgmTick() {
+      if (!musicOn || !audioCtx) return;
+      const step = bgmStep % BGM_MELODY.length;
+      const mel = BGM_MELODY[step];
+      const bass = BGM_BASS[step % BGM_BASS.length];
+      playBGMNote(mel, "square", BGM_STEP * 0.88, 0.11);
+      playBGMNote(bass, "triangle", BGM_STEP * 1.05, 0.07);
+      playBGMNote(bass * 2, "sine", BGM_STEP * 0.5, 0.025);
+      if (step % 2 === 0) {
+        playBGMNote(step % 4 === 0 ? 65 : 180, "sine", 0.04, step % 4 === 0 ? 0.14 : 0.04);
+      }
+      if (step % 4 === 2) {
+        playBGMNote(220, "square", 0.03, 0.05);
+      }
+      bgmStep++;
+    }
+
+    function startBGM() {
+      ensureAudio();
+      stopBGM();
+      if (!musicOn) return;
+      bgmGain.gain.value = 0.09;
+      bgmTick();
+      bgmTimer = setInterval(bgmTick, BGM_STEP * 1000);
+    }
+
+    function stopBGM() {
+      clearInterval(bgmTimer);
+      bgmTimer = null;
+      if (bgmGain) bgmGain.gain.value = 0;
+    }
+
+    function setMusic(on) {
+      musicOn = on;
+      const btn = document.getElementById("btn-music");
+      btn.textContent = on ? "🎵 音楽 ON" : "🎵 音楽 OFF";
+      btn.classList.toggle("off", !on);
+      if (on) startBGM();
+      else stopBGM();
     }
     function sfx(type) {
       if (!soundOn || !audioCtx) return;
@@ -643,8 +725,12 @@
     document.getElementById("btn-sound").onclick = function () {
       ensureAudio();
       soundOn = !soundOn;
-      this.textContent = soundOn ? "🔊 音声 ON" : "🔇 音声 OFF";
+      this.textContent = soundOn ? "🔊 効果音 ON" : "🔊 効果音 OFF";
       this.classList.toggle("off", !soundOn);
+    };
+    document.getElementById("btn-music").onclick = function () {
+      ensureAudio();
+      setMusic(!musicOn);
     };
     function showToast(msg) {
       const t = document.createElement("div");
@@ -1175,6 +1261,7 @@
       if (!playerId || gameResult || e.target.closest("#char-select")) return;
       e.preventDefault();
       ensureAudio();
+      if (musicOn && !bgmTimer) startBGM();
       holdingFire = true;
       const { x, y } = canvasCoords(e);
       lastAim = { x, y };
