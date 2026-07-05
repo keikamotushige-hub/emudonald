@@ -307,6 +307,8 @@
     const COUNTER_Y = H * 0.48;
     const KITCHEN_Y = COUNTER_Y - 72;
     const FLOOR_Y = COUNTER_Y + 88;
+    const MAX_DRIFT = 45;
+    const MAX_SPEED = 2.8;
     const wrap = document.getElementById("wrap");
     const canvas = document.getElementById("canvas");
     const bubble = document.getElementById("speech-bubble");
@@ -861,14 +863,64 @@
     const fighters = ROSTER.map(r => {
       const body = Bodies.circle(r.x * W, r.y * H, 36, {
         label: "fighter",
-        restitution: 0.55,
-        frictionAir: 0.12,
+        restitution: 0.1,
+        frictionAir: 0.45,
         render: { visible: false },
         plugin: { ...r, ax: r.x * W, ay: r.y * H },
       });
       return body;
     });
     Composite.add(world, fighters);
+
+    function fighterBounds(side) {
+      if (side === "kitchen") {
+        return { minX: 100, maxX: W - 100, minY: 130, maxY: COUNTER_Y - 36 };
+      }
+      return { minX: 80, maxX: W - 80, minY: COUNTER_Y + 36, maxY: H - 70 };
+    }
+
+    function constrainFighter(f) {
+      const { side, ax, ay, id } = f.plugin;
+      const b = fighterBounds(side);
+      let { x, y } = f.position;
+      let { x: vx, y: vy } = f.velocity;
+
+      // ホーム位置から離れすぎない
+      const dx = x - ax, dy = y - ay;
+      const dist = Math.hypot(dx, dy);
+      if (dist > MAX_DRIFT && !defeated.has(id)) {
+        x = ax + dx * (MAX_DRIFT / dist);
+        y = ay + dy * (MAX_DRIFT / dist);
+        vx *= 0.5;
+        vy *= 0.5;
+      }
+
+      // エリア内にクランプ
+      x = Math.max(b.minX, Math.min(b.maxX, x));
+      y = Math.max(b.minY, Math.min(b.maxY, y));
+
+      if (x !== f.position.x || y !== f.position.y) {
+        Body.setPosition(f, { x, y });
+      }
+
+      // 速度上限
+      const spd = Math.hypot(vx, vy);
+      if (spd > MAX_SPEED) {
+        vx = (vx / spd) * MAX_SPEED;
+        vy = (vy / spd) * MAX_SPEED;
+        Body.setVelocity(f, { x: vx, y: vy });
+      }
+    }
+
+    function nudgeFighter(f, nx, ny) {
+      if (defeated.has(f.plugin.id)) return;
+      const { ax, ay } = f.plugin;
+      Body.setPosition(f, {
+        x: ax + Math.max(-MAX_DRIFT, Math.min(MAX_DRIFT, f.position.x - ax + nx)),
+        y: ay + Math.max(-MAX_DRIFT, Math.min(MAX_DRIFT, f.position.y - ay + ny)),
+      });
+      Body.setVelocity(f, { x: 0, y: 0 });
+    }
 
     function getFighterBody(id) {
       return fighters.find(f => f.plugin.id === id);
@@ -901,13 +953,10 @@
       Composite.add(world, proj);
       projectiles.add(proj);
 
-      // 攻撃時に全員が動く
+      // 攻撃時は小さくよける（飛ばない）
       for (const f of fighters) {
-        if (defeated.has(f.plugin.id)) continue;
-        Body.applyForce(f, f.position, {
-          x: (Math.random() - 0.5) * 0.08,
-          y: (Math.random() - 0.5) * 0.06,
-        });
+        if (f.id === shooterBody.id || defeated.has(f.plugin.id)) continue;
+        nudgeFighter(f, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 10);
       }
       counterBounce = 3;
 
@@ -992,8 +1041,9 @@
       animState[id].defeatT = 1;
       sfx("defeat");
       speak(victimBody.plugin, randomLine(victimBody.plugin, "fall"));
-      Body.setVelocity(victimBody, { x: (Math.random() - 0.5) * 3, y: 2 });
-      Body.setAngularVelocity(victimBody, 0.15);
+      Body.setPosition(victimBody, { x: victimBody.plugin.ax, y: victimBody.plugin.ay });
+      Body.setVelocity(victimBody, { x: 0, y: 0 });
+      Body.setAngularVelocity(victimBody, 0);
       screenShake = 8;
       showFx(victimBody.position.x, victimBody.position.y, "K.O.!", "#e74c3c");
       spawnParticles(victimBody.position.x, victimBody.position.y, "#e74c3c", 12);
@@ -1042,14 +1092,8 @@
         saveHabit();
 
         const dir = Vector.normalise(Vector.sub(victim.position, proj.position));
-        const force = 0.18 + (proj.plugin.shooterId === playerId ? 0.04 : 0);
-        Body.applyForce(victim, victim.position, { x: dir.x * force, y: dir.y * force });
-        // 被弾でよける
-        Body.applyForce(victim, victim.position, {
-          x: (Math.random() - 0.5) * 0.12,
-          y: (Math.random() - 0.5) * 0.1,
-        });
-        screenShake = Math.min(screenShake + 4, 12);
+        nudgeFighter(victim, dir.x * 12, dir.y * 8);
+        screenShake = Math.min(screenShake + 3, 8);
         counterBounce = 2;
         spawnParticles(
           (proj.position.x + victim.position.x) / 2,
@@ -1426,18 +1470,18 @@
       if (counterBounce > 0) counterBounce *= 0.75;
       for (const f of fighters) {
         if (defeated.has(f.plugin.id)) {
-          Body.setVelocity(f, { x: f.velocity.x * 0.9, y: f.velocity.y * 0.9 });
+          Body.setPosition(f, { x: f.plugin.ax, y: f.plugin.ay });
+          Body.setVelocity(f, { x: 0, y: 0 });
           continue;
         }
         const homeX = f.plugin.ax;
         const homeY = f.plugin.ay;
-        const dist = Math.hypot(f.position.x - homeX, f.position.y - homeY);
-        const pull = dist > 80 ? 0.00012 : 0.00006;
         Body.applyForce(f, f.position, {
-          x: (homeX - f.position.x) * pull,
-          y: (homeY - f.position.y) * pull,
+          x: (homeX - f.position.x) * 0.0004,
+          y: (homeY - f.position.y) * 0.0004,
         });
-        Body.setVelocity(f, { x: f.velocity.x * 0.88, y: f.velocity.y * 0.88 });
+        Body.setVelocity(f, { x: f.velocity.x * 0.75, y: f.velocity.y * 0.75 });
+        constrainFighter(f);
       }
     }, 50);
 
