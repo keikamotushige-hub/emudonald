@@ -109,6 +109,7 @@
       pointer-events: none;
       font-weight: 700;
     }
+    #speech-bubble {
       position: absolute;
       bottom: 16px;
       left: 50%;
@@ -127,6 +128,43 @@
       transition: opacity 0.2s;
     }
     #speech-bubble.show { opacity: 1; }
+
+    #game-over {
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: rgba(39,37,31,0.88);
+      gap: 12px;
+    }
+    #game-over.show { display: flex; }
+    #game-over .go-title {
+      font-family: "Mochiy Pop One", sans-serif;
+      font-size: clamp(36px, 8vw, 64px);
+      color: #FFC72C;
+      text-shadow: 4px 4px 0 #27251F, 0 0 24px rgba(255,199,44,0.6);
+      animation: winPulse 0.8s ease-in-out infinite alternate;
+    }
+    #game-over.lose .go-title { color: #ff7675; text-shadow: 4px 4px 0 #27251F; animation: none; }
+    @keyframes winPulse {
+      from { transform: scale(1); }
+      to { transform: scale(1.06); }
+    }
+    #game-over p { color: #F5EBDC; font-size: 14px; text-align: center; max-width: 320px; }
+    #game-over button {
+      font-family: "Mochiy Pop One", sans-serif;
+      font-size: 14px;
+      padding: 12px 24px;
+      border: 3px solid #27251F;
+      border-radius: 12px;
+      cursor: pointer;
+      background: #FFC72C;
+      color: #27251F;
+      box-shadow: 0 4px 0 #27251F;
+    }
 
     #habit-panel, #controls {
       width: min(960px, 100vw);
@@ -213,24 +251,29 @@
   </style>
 </head>
 <body>
-  <div class="title">🍔 エムドナルド — バーガー大乱闘 🍔</div>
+  <div class="title">🍔 エムドナルド — 店内バトル 🍔</div>
 
   <div id="wrap">
     <div id="char-select">
       <h2>誰になって戦う？</h2>
-      <p>キャラを選んで、みんなにバーガーを投げ合おう！</p>
+      <p>店員はバーガー、客は300円を投げる！<br>店員を倒せば YOU WIN — 倒されたら YOU LOSE</p>
       <div class="char-grid" id="char-grid"></div>
     </div>
     <div id="meta">
       <div class="row">
         <span id="player-label">キャラ選択中…</span>
-        <span id="bot-count">🤖 ロボ 0体</span>
-        <span id="combo">COMBO x0</span>
-        <span id="score">ヒット 0</span>
+        <span id="player-hp">HP ████████ 100</span>
+        <span id="bot-count">🤖 0体</span>
+        <span id="score">店員撃破 0/3</span>
       </div>
     </div>
-    <div id="fight-hint">クリック長押しで連射！ロボ5体とバーガー合戦</div>
+    <div id="fight-hint">長押し連射！店員を倒して YOU WIN を目指せ</div>
     <div id="speech-bubble"></div>
+    <div id="game-over">
+      <div class="go-title" id="go-title">YOU WIN!</div>
+      <p id="go-msg">店員全員を倒した！</p>
+      <button type="button" id="btn-retry">もう一度</button>
+    </div>
     <canvas id="canvas"></canvas>
   </div>
 
@@ -259,7 +302,9 @@
     const { Engine, Render, Runner, Bodies, Body, Composite, Events, Vector } = Matter;
 
     const W = 960, H = 640;
-    const COUNTER_Y = H * 0.38;
+    const COUNTER_Y = H * 0.42;
+    const CLERK_Y = H * 0.34;
+    const CUSTOMER_Y = H * 0.58;
     const wrap = document.getElementById("wrap");
     const canvas = document.getElementById("canvas");
     const bubble = document.getElementById("speech-bubble");
@@ -268,74 +313,77 @@
     const MC = { red: "#DA291C", yellow: "#FFC72C", cream: "#F5EBDC", brown: "#27251F" };
     const UBER_SIGNUP_URL = "https://www.uber.com/signup/drive/deliver/?invite_code=zzzxa28";
 
+    const MAX_HP = 100;
+    const CLERK_HP = 120;
+    const DAMAGE = { burger: 16, coin: 12, bag: 14 };
+    const CLERK_IDS = ["yui", "ren", "takuya"];
+
     const ROSTER = [
       {
         id: "yui", name: "ゆい", emoji: "✨", role: "cute-clerk",
-        x: 0.18, y: 0.62,
+        x: 0.22, y: CLERK_Y / H,
+        hp: CLERK_HP, isClerk: true,
         voice: { pitch: 1.45, rate: 1.1 },
         lines: {
-          throw: ["いっけー！", "バーガーどぞ！", "えいっ！", "当てる！"],
-          hit: ["きゃっ！", "あはは！", "えへへ！", "もう！"],
-          idle: ["いらっしゃいませ〜", "可愛く決めた！", "バンッ！", "エムドナルド！"],
+          throw: ["バーガーどぞ！", "いっけー！", "当てる！", "注文どうぞ！"],
+          hit: ["きゃっ！", "痛い！", "まだ立つ！", "負けない！"],
+          idle: ["いらっしゃいませ〜", "レジ番！", "エムドナルド！", "バンッ！"],
+          fall: ["うわぁ…倒れた…", "店長ー！"],
         },
       },
       {
-        id: "ren", name: "レン", emoji: "👨‍🍳", role: "male-clerk",
-        x: 0.38, y: 0.72,
+        id: "ren", name: "レン", emoji: "💇", role: "messy-clerk",
+        x: 0.42, y: CLERK_Y / H,
+        hp: CLERK_HP, isClerk: true,
         voice: { pitch: 0.95, rate: 1.08 },
         lines: {
-          throw: ["ドン！", "受け取り！", "ホットで！", "いくぞ！"],
-          hit: ["おっと！", "ナイス！", "まだ！", "よし！"],
-          idle: ["新人店員レン", "レジ頑張る", "バーガー投げ！", "任せて！"],
+          throw: ["ドン！", "ボサボサ投げ！", "受け取り！", "ホットで！"],
+          hit: ["おっと！", "髪！", "まだ！", "強い…！"],
+          idle: ["ボサボサ店員", "レンです", "バーガー投げ！", "任せて！"],
+          fall: ["倒れた…", "もう無理…"],
         },
       },
       {
         id: "takuya", name: "タクヤ", emoji: "😎", role: "handsome",
-        x: 0.62, y: 0.65,
+        x: 0.62, y: CLERK_Y / H,
+        hp: CLERK_HP, isClerk: true,
         voice: { pitch: 0.82, rate: 1.0 },
         lines: {
-          throw: ["イケメン直球！", "見てろ！", "決めた！", "カッコよく！"],
-          hit: ["…まあいい", "ナイスショット", "ほほう", "再戦！"],
-          idle: ["イケメン店員", "モテるレジ", "スマイル", "タクヤです"],
+          throw: ["イケメン直球！", "見てろ！", "決めた！", "最強店員！"],
+          hit: ["…まあいい", "ナイス", "まだ余裕", "強い客…"],
+          idle: ["イケメン店員", "モテるレジ", "タクヤです", "スマイル"],
+          fall: ["くっ…！", "負けた…"],
         },
       },
       {
         id: "ken", name: "ケン", emoji: "🚴", role: "courier", variant: 0,
-        x: 0.82, y: 0.58,
+        x: 0.84, y: 0.48,
+        hp: MAX_HP, isClerk: false,
         voice: { pitch: 0.95, rate: 1.12 },
         lines: {
           throw: ["配達投げ！", "ピックアップ！", "届ける！", "ケン行く！"],
           hit: ["うわ！", "バッグ！", "おっと！", "まだ届ける！"],
-          idle: ["配達中", "バッグ持った", "ケンです", "急げ！"],
-        },
-      },
-      {
-        id: "sou", name: "ソウ", emoji: "🚴‍♂️", role: "courier", variant: 1,
-        x: 0.28, y: 0.48,
-        voice: { pitch: 0.88, rate: 1.0 },
-        lines: {
-          throw: ["ソウ投げ！", "配達GO！", "ほい！", "届けます！"],
-          hit: ["痛っ！", "メガネ！", "わっ", "まだ行く！"],
-          idle: ["ソウです", "自転車停めた", "配達員", "バッグある"],
+          idle: ["配達中", "Uber Eats", "急げ！", "ケンです"],
+          fall: ["配達中断…", "倒れた…"],
         },
       },
       {
         id: "customer", name: "客・田中", emoji: "🧑", role: "customer",
-        x: 0.52, y: 0.78,
+        x: 0.50, y: CUSTOMER_Y / H,
+        hp: MAX_HP, isClerk: false,
         voice: { pitch: 1.0, rate: 1.05 },
         lines: {
-          throw: ["注文のはずが！", "返す！", "これ返して！", "バーガー返却！"],
+          throw: ["300円！", "はいどうぞ！", "お釣りない！", "コイン投げ！"],
           hit: ["痛い！", "なにこれ！", "店長ー！", "もう！"],
-          idle: ["バーガーください", "ポテトも", "待ってる", "お腹空いた"],
+          idle: ["バーガーください", "300円", "待ってる", "お腹空いた"],
+          fall: ["財布…", "倒れた…"],
         },
       },
     ];
 
     let playerId = null;
     let playerHits = 0;
-    let playerHitTaken = 0;
-    let combo = 0;
-    let comboTimer = null;
+    let gameResult = null;
     let soundOn = true;
     let audioCtx = null;
     let playerThrowReady = true;
@@ -343,9 +391,10 @@
     let holdFireTimer = null;
     let lastAim = { x: W / 2, y: H / 2 };
     const botThrowReady = new Map();
-    const burgers = new Set();
+    const projectiles = new Set();
     const hitCooldown = new Map();
-    const scores = Object.fromEntries(ROSTER.map(r => [r.id, 0]));
+    const hpMap = Object.fromEntries(ROSTER.map(r => [r.id, r.hp || MAX_HP]));
+    const fallen = new Set();
 
     const SAVE_KEY = "emudonald_habit_v3";
     let habit = loadHabit();
@@ -366,16 +415,30 @@
       localStorage.setItem(SAVE_KEY, JSON.stringify(habit));
       updateUI();
     }
+    function hpBar(n, max) {
+      const filled = Math.max(0, Math.ceil((n / max) * 8));
+      return "█".repeat(filled) + "░".repeat(8 - filled);
+    }
     function updateUI() {
       document.getElementById("st-total").textContent = habit.total;
       document.getElementById("st-days").textContent = habit.streak;
       document.getElementById("st-today").textContent = habit.todayHits;
-      document.getElementById("combo").textContent = "COMBO x" + combo;
-      document.getElementById("score").textContent = "ヒット " + playerHits;
       const p = ROSTER.find(r => r.id === playerId);
-      document.getElementById("player-label").textContent = p ? `${p.emoji} 操作中: ${p.name}` : "キャラを選んでね";
-      const bots = playerId ? ROSTER.length - 1 : 0;
-      document.getElementById("bot-count").textContent = playerId ? `🤖 ロボ ${bots}体 vs あなた` : "";
+      const php = playerId ? hpMap[playerId] : MAX_HP;
+      const pmax = p?.hp || MAX_HP;
+      document.getElementById("player-hp").textContent = playerId
+        ? `HP ${hpBar(php, pmax)} ${Math.max(0, Math.ceil(php))}`
+        : "";
+      document.getElementById("player-label").textContent = p
+        ? `${p.emoji} 操作中: ${p.name}`
+        : "キャラを選んでね";
+      const bots = playerId ? ROSTER.filter(r => r.id !== playerId && !fallen.has(r.id)).length : 0;
+      document.getElementById("bot-count").textContent = playerId ? `🤖 残り ${bots}体` : "";
+      const clerksDown = enemyClerks().filter(id => fallen.has(id)).length;
+      const clerksTotal = playerId ? enemyClerks().length : 3;
+      document.getElementById("score").textContent = playerId
+        ? `店員撃破 ${clerksDown}/${clerksTotal}`
+        : "店員撃破 0/3";
     }
     updateUI();
 
@@ -390,23 +453,79 @@
       charGrid.appendChild(btn);
     });
 
+    function resetBattle() {
+      gameResult = null;
+      playerHits = 0;
+      fallen.clear();
+      projectiles.clear();
+      hitCooldown.clear();
+      document.getElementById("game-over").classList.remove("show", "lose");
+      ROSTER.forEach(r => {
+        hpMap[r.id] = r.hp || MAX_HP;
+        botThrowReady.set(r.id, 0);
+        const body = getFighterBody(r.id);
+        if (body) {
+          Body.setStatic(body, false);
+          Body.setPosition(body, { x: r.x * W, y: r.y * H });
+          Body.setVelocity(body, { x: 0, y: 0 });
+          Body.setAngle(body, 0);
+          body.plugin.ax = r.x * W;
+          body.plugin.ay = r.y * H;
+        }
+      });
+      Composite.allBodies(world).forEach(b => {
+        if (b.label === "projectile") Composite.remove(world, b);
+      });
+      updateUI();
+    }
+
     function startAs(id) {
       playerId = id;
-      playerHits = 0;
+      resetBattle();
       document.getElementById("char-select").classList.add("hidden");
       updateUI();
       ensureAudio();
       const p = ROSTER.find(r => r.id === id);
-      showToast(`${p.emoji} ${p.name} vs 🤖ロボ5体 — バーガー合戦開始！`);
-      speak(p, "クリック連射でロボを倒せ！がんばれ！");
+      const proj = p.role === "customer" ? "300円コイン" : "バーガー";
+      showToast(`${p.emoji} ${p.name} — ${proj}で店員を倒せ！`);
+      speak(p, "店員を倒して YOU WIN！がんばれ！");
       ROSTER.forEach(r => {
-        if (r.id !== id) botThrowReady.set(r.id, 0);
+        if (r.id !== id) botThrowReady.set(r.id, Date.now() + 800 + Math.random() * 600);
       });
     }
 
+    function endGame(result) {
+      if (gameResult) return;
+      gameResult = result;
+      holdingFire = false;
+      clearInterval(holdFireTimer);
+      const overlay = document.getElementById("game-over");
+      const title = document.getElementById("go-title");
+      const msg = document.getElementById("go-msg");
+      overlay.classList.add("show");
+      if (result === "win") {
+        title.textContent = "YOU WIN!";
+        msg.textContent = "店員全員を倒した！エムドナルドの勝利！";
+        overlay.classList.remove("lose");
+        sfx("win");
+      } else {
+        title.textContent = "YOU LOSE";
+        msg.textContent = "倒されてしまった…もう一度挑戦しよう！";
+        overlay.classList.add("lose");
+        sfx("lose");
+      }
+    }
+
+    document.getElementById("btn-retry").onclick = () => {
+      if (playerId) startAs(playerId);
+    };
+
     document.getElementById("btn-change").onclick = () => {
       document.getElementById("char-select").classList.remove("hidden");
+      document.getElementById("game-over").classList.remove("show", "lose");
       playerId = null;
+      gameResult = null;
+      resetBattle();
       updateUI();
     };
 
@@ -437,10 +556,34 @@
         osc.start(t); osc.stop(t + 0.18);
       } else if (type === "combo") {
         osc.type = "sine";
-        osc.frequency.setValueAtTime(440 + combo * 25, t);
+        osc.frequency.setValueAtTime(440, t);
         gain.gain.setValueAtTime(0.1, t);
         gain.gain.exponentialRampToValueAtTime(0.01, t + 0.12);
         osc.start(t); osc.stop(t + 0.12);
+      } else if (type === "win") {
+        [523, 659, 784].forEach((f, i) => {
+          const o = audioCtx.createOscillator();
+          const g = audioCtx.createGain();
+          o.connect(g); g.connect(audioCtx.destination);
+          o.type = "sine";
+          o.frequency.setValueAtTime(f, t + i * 0.12);
+          g.gain.setValueAtTime(0.15, t + i * 0.12);
+          g.gain.exponentialRampToValueAtTime(0.01, t + i * 0.12 + 0.25);
+          o.start(t + i * 0.12); o.stop(t + i * 0.12 + 0.25);
+        });
+      } else if (type === "lose") {
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(180, t);
+        osc.frequency.exponentialRampToValueAtTime(60, t + 0.5);
+        gain.gain.setValueAtTime(0.15, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+        osc.start(t); osc.stop(t + 0.5);
+      } else if (type === "coin") {
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(880, t);
+        gain.gain.setValueAtTime(0.08, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.06);
+        osc.start(t); osc.stop(t + 0.06);
       }
     }
     function speak(fighter, line) {
@@ -504,48 +647,89 @@
       ctx.restore();
     }
 
+    function projectileTypeFor(role) {
+      if (role === "customer") return "coin";
+      if (role === "courier") return "bag";
+      return "burger";
+    }
+
     function drawStore(ctx) {
       ctx.fillStyle = MC.cream;
       ctx.fillRect(0, 0, W, H);
-      // 天井
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(0, 0, W, 44);
-      for (let i = 0; i < 8; i++) {
-        const lx = 60 + i * 115;
-        ctx.fillStyle = "rgba(255,199,44,0.3)";
-        ctx.beginPath(); ctx.ellipse(lx, 36, 36, 12, 0, 0, Math.PI * 2); ctx.fill();
-      }
-      // 壁
+      // 赤い腰壁（典型的なファストフード店内）
       ctx.fillStyle = MC.red;
-      ctx.fillRect(0, H - 48, W, 48);
+      ctx.fillRect(0, 80, W, H - 80);
+      // 白い天井
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, W, 80);
+      for (let i = 0; i < 7; i++) {
+        const lx = 70 + i * 130;
+        ctx.fillStyle = "rgba(255,199,44,0.35)";
+        ctx.beginPath(); ctx.ellipse(lx, 50, 40, 14, 0, 0, Math.PI * 2); ctx.fill();
+      }
       // 床タイル
       const tile = 32;
-      for (let y = H - 200; y < H; y += tile) {
+      for (let y = H - 180; y < H; y += tile) {
         for (let x = 0; x < W; x += tile) {
           ctx.fillStyle = ((x / tile | 0) + (y / tile | 0)) % 2 ? MC.cream : "#E8D5C4";
           ctx.fillRect(x, y, tile, tile);
         }
       }
-      // 看板
+      // 壁のゴールデンアーチ看板
       ctx.fillStyle = MC.red;
-      ctx.fillRect(W/2 - 100, 52, 200, 80);
-      drawGoldenArches(ctx, W/2, 88, 70);
+      ctx.strokeStyle = MC.yellow;
+      ctx.lineWidth = 4;
+      ctx.fillRect(W/2 - 110, 88, 220, 72);
+      ctx.strokeRect(W/2 - 110, 88, 220, 72);
+      drawGoldenArches(ctx, W/2, 118, 55);
       ctx.fillStyle = MC.yellow;
-      ctx.font = "bold 13px 'Noto Sans JP'";
+      ctx.font = "bold 14px 'Noto Sans JP'";
       ctx.textAlign = "center";
-      ctx.fillText("エムドナルド", W/2, 118);
-      // ★ 黒い一長カウンター
-      const cw = W * 0.88, ch = 14, cy = COUNTER_Y;
+      ctx.fillText("エムドナルド", W/2, 148);
+      // メニューボード
       ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(40, 100, 140, 90);
+      ctx.fillRect(W - 180, 100, 140, 90);
+      ctx.fillStyle = MC.yellow;
+      ctx.font = "bold 11px 'Noto Sans JP'";
+      ctx.fillText("🍔 SET", 110, 130);
+      ctx.fillText("¥680", 110, 150);
+      ctx.fillText("🍟 DRINK", W - 110, 130);
+      ctx.fillText("¥300", W - 110, 150);
+      // ドリンクマシン
+      ctx.fillStyle = "#ddd";
+      ctx.fillRect(24, COUNTER_Y - 80, 50, 70);
+      ctx.fillStyle = MC.red;
+      ctx.fillRect(30, COUNTER_Y - 75, 38, 12);
+      // ★ レジカウンター（黒一長）
+      const cw = W * 0.78, ch = 18, cy = COUNTER_Y;
+      ctx.fillStyle = "#111";
       ctx.fillRect((W - cw) / 2, cy - ch / 2, cw, ch);
-      ctx.fillStyle = "#333";
-      ctx.fillRect((W - cw) / 2, cy - ch / 2 - 4, cw, 4);
+      ctx.fillStyle = "#2a2a2a";
+      ctx.fillRect((W - cw) / 2, cy - ch / 2 - 6, cw, 6);
       ctx.strokeStyle = MC.brown;
       ctx.lineWidth = 2;
-      ctx.strokeRect((W - cw) / 2, cy - ch / 2 - 4, cw, ch + 4);
-      ctx.fillStyle = "#888";
+      ctx.strokeRect((W - cw) / 2, cy - ch / 2 - 6, cw, ch + 6);
+      // レジ
+      ctx.fillStyle = "#333";
+      ctx.fillRect(W/2 - 28, cy - 28, 56, 22);
+      ctx.fillStyle = MC.yellow;
       ctx.font = "9px 'Noto Sans JP'";
-      ctx.fillText("━━━━ レジカウンター ━━━━", W/2, cy + 3);
+      ctx.fillText("REGISTER", W/2, cy - 14);
+      ctx.fillStyle = "#888";
+      ctx.fillText("━━ カウンター ━━", W/2, cy + 5);
+      // 客席エリアの線
+      ctx.strokeStyle = "rgba(255,199,44,0.4)";
+      ctx.setLineDash([8, 8]);
+      ctx.beginPath();
+      ctx.moveTo(40, CUSTOMER_Y - 20);
+      ctx.lineTo(W - 40, CUSTOMER_Y - 20);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(255,255,255,0.7)";
+      ctx.font = "10px 'Noto Sans JP'";
+      ctx.fillText("← 客席エリア", 90, CUSTOMER_Y - 28);
+      ctx.fillText("店員エリア →", W - 90, CLERK_Y + 50);
     }
 
     Events.on(render, "beforeRender", () => drawStore(render.context));
@@ -555,7 +739,7 @@
       Bodies.rectangle(W/2, H + 20, W, 40, { isStatic: true, render: { visible: false } }),
       Bodies.rectangle(-20, H/2, 40, H, { isStatic: true, render: { visible: false } }),
       Bodies.rectangle(W + 20, H/2, 40, H, { isStatic: true, render: { visible: false } }),
-      Bodies.rectangle(W/2, COUNTER_Y, W * 0.88, 14, { isStatic: true, render: { visible: false } }),
+      Bodies.rectangle(W/2, COUNTER_Y, W * 0.78, 18, { isStatic: true, render: { visible: false } }),
     ]);
 
     const fighters = ROSTER.map(r => {
@@ -574,114 +758,156 @@
       return fighters.find(f => f.plugin.id === id);
     }
 
-    function spawnBurger(shooterBody, tx, ty, opts = {}) {
+    function spawnProjectile(shooterBody, tx, ty, opts = {}) {
+      if (gameResult || fallen.has(shooterBody.plugin.id)) return;
       const shooter = shooterBody.plugin;
       const from = shooterBody.position;
       const dir = Vector.normalise(Vector.sub({ x: tx, y: ty }, from));
-      const isCourier = shooter.role === "courier";
-      const speed = opts.fast ? 22 : 20;
-      const burger = Bodies.circle(from.x, from.y - 28, 14, {
-        label: "burger",
+      const ptype = projectileTypeFor(shooter.role);
+      const speed = ptype === "coin" ? 24 : opts.fast ? 22 : 20;
+      const radius = ptype === "coin" ? 12 : 14;
+      const proj = Bodies.circle(from.x, from.y - 28, radius, {
+        label: "projectile",
         restitution: 0.92,
         frictionAir: 0.008,
         render: { visible: false },
-        plugin: { shooterId: shooter.id, isBag: isCourier, fromBot: shooter.id !== playerId },
+        plugin: {
+          shooterId: shooter.id,
+          ptype,
+          fromBot: shooter.id !== playerId,
+        },
       });
-      Body.setVelocity(burger, { x: dir.x * speed, y: dir.y * speed });
-      Body.setAngularVelocity(burger, (Math.random() - 0.5) * 0.35);
-      Composite.add(world, burger);
-      burgers.add(burger);
-      if (shooter.id === playerId || !opts.quiet) sfx("throw");
+      Body.setVelocity(proj, { x: dir.x * speed, y: dir.y * speed });
+      Body.setAngularVelocity(proj, (Math.random() - 0.5) * 0.35);
+      Composite.add(world, proj);
+      projectiles.add(proj);
+      if (shooter.id === playerId || !opts.quiet) {
+        sfx(ptype === "coin" ? "coin" : "throw");
+      }
       if (shooter.id === playerId) speak(shooter, randomLine(shooter, "throw"));
-      const fxText = shooter.id === playerId ? "バンッ！" : "🤖";
-      showFx(from.x, from.y, fxText, isCourier ? "#06C167" : MC.yellow);
+      const fxText = ptype === "coin" ? "300円！" : shooter.id === playerId ? "バンッ！" : "🤖";
+      showFx(from.x, from.y, fxText, ptype === "coin" ? "#f1c40f" : ptype === "bag" ? "#06C167" : MC.yellow);
       setTimeout(() => {
-        if (burgers.has(burger)) { Composite.remove(world, burger); burgers.delete(burger); }
+        if (projectiles.has(proj)) { Composite.remove(world, proj); projectiles.delete(proj); }
       }, 3200);
     }
 
     function playerThrow(tx, ty) {
-      if (!playerId || !playerThrowReady) return;
+      if (!playerId || !playerThrowReady || gameResult) return;
       const player = getFighterBody(playerId);
-      if (!player) return;
+      if (!player || fallen.has(playerId)) return;
       playerThrowReady = false;
-      spawnBurger(player, tx, ty, { fast: holdingFire });
+      spawnProjectile(player, tx, ty, { fast: holdingFire });
       setTimeout(() => { playerThrowReady = true; }, holdingFire ? 100 : 180);
     }
 
     function pickBotTarget(shooterBody) {
       const player = getFighterBody(playerId);
-      if (player && Math.random() < 0.7) return player;
-      const others = fighters.filter(f => f.id !== shooterBody.id);
+      if (player && !fallen.has(playerId) && Math.random() < 0.75) return player;
+      const others = fighters.filter(f =>
+        f.plugin.id !== shooterBody.plugin.id && !fallen.has(f.plugin.id)
+      );
+      if (!others.length) return null;
       return others[Math.floor(Math.random() * others.length)];
     }
 
     function runBotAI() {
-      if (!playerId) return;
+      if (!playerId || gameResult) return;
       const now = Date.now();
-      for (const bot of fighters.filter(f => f.plugin.id !== playerId)) {
+      for (const bot of fighters.filter(f => f.plugin.id !== playerId && !fallen.has(f.plugin.id))) {
         const id = bot.plugin.id;
         const next = botThrowReady.get(id) || 0;
         if (now < next) continue;
         const target = pickBotTarget(bot);
         if (!target) continue;
-        const spread = target.plugin.id === playerId ? 25 : 45;
-        spawnBurger(
+        const spread = target.plugin.id === playerId ? 22 : 40;
+        spawnProjectile(
           bot,
           target.position.x + (Math.random() - 0.5) * spread,
           target.position.y + (Math.random() - 0.5) * spread,
           { quiet: true }
         );
-        botThrowReady.set(id, now + 700 + Math.random() * 900);
+        const isClerk = bot.plugin.isClerk;
+        botThrowReady.set(id, now + (isClerk ? 600 : 900) + Math.random() * (isClerk ? 700 : 900));
       }
+    }
+
+    function enemyClerks() {
+      return CLERK_IDS.filter(id => id !== playerId);
+    }
+
+    function checkWin() {
+      if (enemyClerks().every(id => fallen.has(id))) {
+        setTimeout(() => endGame("win"), 800);
+      }
+    }
+
+    function knockDown(victimBody) {
+      const id = victimBody.plugin.id;
+      if (fallen.has(id)) return;
+      fallen.add(id);
+      speak(victimBody.plugin, randomLine(victimBody.plugin, "fall"));
+      Body.setVelocity(victimBody, {
+        x: (Math.random() - 0.5) * 6,
+        y: 5 + Math.random() * 3,
+      });
+      Body.setAngularVelocity(victimBody, (Math.random() - 0.5) * 0.4);
+      showFx(victimBody.position.x, victimBody.position.y, "倒れた！", "#e74c3c");
+      updateUI();
+      if (id === playerId) {
+        setTimeout(() => endGame("lose"), 600);
+        return;
+      }
+      checkWin();
     }
 
     Events.on(engine, "collisionStart", ({ pairs }) => {
       for (const { bodyA: a, bodyB: b } of pairs) {
-        const burger = [a, b].find(x => x.label === "burger");
+        const proj = [a, b].find(x => x.label === "projectile");
         const victim = [a, b].find(x => x.label === "fighter");
-        if (!burger || !victim) continue;
-        if (burger.plugin.shooterId === victim.plugin.id) continue;
-        const key = burger.id + "-" + victim.id;
+        if (!proj || !victim) continue;
+        if (proj.plugin.shooterId === victim.plugin.id) continue;
+        if (fallen.has(victim.plugin.id)) continue;
+        const key = proj.id + "-" + victim.id;
         if (hitCooldown.has(key)) continue;
         hitCooldown.set(key, true);
         setTimeout(() => hitCooldown.delete(key), 180);
 
-        const shooterData = ROSTER.find(r => r.id === burger.plugin.shooterId);
-        scores[shooterData.id]++;
-        if (burger.plugin.shooterId === playerId) {
+        const dmg = DAMAGE[proj.plugin.ptype] || 12;
+        hpMap[victim.plugin.id] -= dmg;
+
+        if (proj.plugin.shooterId === playerId) {
           playerHits++;
-          combo++;
-          clearTimeout(comboTimer);
-          comboTimer = setTimeout(() => { combo = 0; updateUI(); }, 1600);
-          if (combo >= 3) sfx("combo");
+          if (victim.plugin.isClerk) {
+            showFx(victim.position.x, victim.position.y - 30, `-${dmg}`, MC.yellow);
+          }
         }
         if (victim.plugin.id === playerId) {
-          playerHitTaken++;
-          combo = 0;
-          updateUI();
-          if (burger.plugin.fromBot) {
-            showToast(`🤖 ${ROSTER.find(r => r.id === burger.plugin.shooterId)?.name || "ロボ"}の攻撃！`);
-          }
+          showToast(`🤖 ${ROSTER.find(r => r.id === proj.plugin.shooterId)?.name || "店員"}の攻撃！ -${dmg}`);
         }
         habit.total++;
         habit.todayHits++;
         saveHabit();
 
-        const dir = Vector.normalise(Vector.sub(victim.position, burger.position));
-        Body.applyForce(victim, victim.position, { x: dir.x * 0.14, y: dir.y * 0.14 });
+        const dir = Vector.normalise(Vector.sub(victim.position, proj.position));
+        Body.applyForce(victim, victim.position, { x: dir.x * 0.16, y: dir.y * 0.16 });
         sfx("hit");
-        if (victim.plugin.id === playerId || burger.plugin.shooterId === playerId) {
+        if (victim.plugin.id === playerId || proj.plugin.shooterId === playerId) {
           speak(victim.plugin, randomLine(victim.plugin, "hit"));
         }
         showFx(
-          (burger.position.x + victim.position.x) / 2,
-          (burger.position.y + victim.position.y) / 2,
-          combo > 1 ? `COMBO x${combo}!` : "直撃!",
+          (proj.position.x + victim.position.x) / 2,
+          (proj.position.y + victim.position.y) / 2,
+          "直撃!",
           "#FF6B9D"
         );
-        Composite.remove(world, burger);
-        burgers.delete(burger);
+        Composite.remove(world, proj);
+        projectiles.delete(proj);
+        updateUI();
+
+        if (hpMap[victim.plugin.id] <= 0) {
+          knockDown(victim);
+        }
       }
     });
 
@@ -694,7 +920,7 @@
     }
 
     function startHold(e) {
-      if (!playerId || e.target.closest("#char-select")) return;
+      if (!playerId || gameResult || e.target.closest("#char-select")) return;
       e.preventDefault();
       ensureAudio();
       holdingFire = true;
@@ -784,6 +1010,27 @@
       ctx.beginPath(); ctx.ellipse(-6, -8, 2, 2.5, 0, 0, Math.PI * 2); ctx.ellipse(6, -8, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill();
     }
 
+    function drawMessyClerk(ctx) {
+      drawUniform(ctx, "M");
+      ctx.fillStyle = "#2d3436";
+      ctx.fillRect(-20, 50, 40, 16);
+      ctx.fillStyle = "#111";
+      ctx.fillRect(-12, 66, 10, 14); ctx.fillRect(2, 66, 10, 14);
+      ctx.fillStyle = skinGrad(ctx, -6);
+      ctx.beginPath(); ctx.ellipse(0, -4, 18, 20, 0, 0, Math.PI * 2); ctx.fill();
+      // ボサボサ髪
+      ctx.fillStyle = "#3d2314";
+      for (let i = -3; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.ellipse(i * 5, -18 + Math.abs(i) * 2, 6, 14, i * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.ellipse(-6, -8, 4, 5, 0, 0, Math.PI * 2); ctx.ellipse(6, -8, 4, 5, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#222";
+      ctx.beginPath(); ctx.ellipse(-6, -8, 2, 2.5, 0, 0, Math.PI * 2); ctx.ellipse(6, -8, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    }
+
     function drawHandsome(ctx) {
       drawUniform(ctx, "M");
       ctx.fillStyle = "#2d3436";
@@ -845,17 +1092,29 @@
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.ellipse(-6, -8, 4, 5, 0, 0, Math.PI * 2); ctx.ellipse(6, -8, 4, 5, 0, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = "#e67e22";
-      ctx.fillRect(20, 8, 18, 14);
-      ctx.fillStyle = "#f39c12";
-      ctx.fillRect(22, 6, 14, 4);
-      ctx.fillStyle = "#fff";
-      ctx.font = "7px sans-serif";
+      ctx.beginPath(); ctx.arc(24, 16, 10, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#b7950b";
+      ctx.font = "bold 7px sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("注文", 29, 18);
+      ctx.fillText("300", 24, 18);
     }
 
-    function drawBurger(ctx, isBag) {
-      if (isBag) {
+    function drawCoin(ctx) {
+      ctx.fillStyle = "#f1c40f";
+      ctx.beginPath(); ctx.arc(0, 0, 11, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "#d4ac0d";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = "#b7950b";
+      ctx.font = "bold 8px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("300", 0, 3);
+      ctx.font = "6px sans-serif";
+      ctx.fillText("円", 0, 10);
+    }
+
+    function drawBurger(ctx, ptype) {
+      if (ptype === "bag") {
         ctx.fillStyle = "#06C167";
         ctx.beginPath();
         ctx.moveTo(-12, -7); ctx.lineTo(12, -7); ctx.lineTo(14, 9); ctx.lineTo(-14, 9);
@@ -871,41 +1130,57 @@
 
     function drawCharacter(ctx, role, variant) {
       if (role === "cute-clerk") drawCuteClerk(ctx);
-      else if (role === "male-clerk") drawMaleClerk(ctx);
+      else if (role === "messy-clerk") drawMessyClerk(ctx);
       else if (role === "handsome") drawHandsome(ctx);
       else if (role === "courier") drawCourier(ctx, variant ?? 0);
       else drawCustomer(ctx);
     }
 
+    function drawHpBar(ctx, x, y, hp, maxHp) {
+      const w = 44, h = 5;
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(x - w/2, y, w, h);
+      const ratio = Math.max(0, hp / maxHp);
+      ctx.fillStyle = ratio > 0.4 ? "#2ecc71" : ratio > 0.2 ? "#f39c12" : "#e74c3c";
+      ctx.fillRect(x - w/2, y, w * ratio, h);
+    }
+
     Events.on(render, "afterRender", () => {
       const ctx = render.context;
       for (const f of fighters) {
-        const { role, name, variant, id } = f.plugin;
+        const { role, name, variant, id, isClerk } = f.plugin;
         const isPlayer = id === playerId;
+        const isDown = fallen.has(id);
         ctx.save();
         ctx.translate(f.position.x, f.position.y);
         ctx.rotate(f.angle);
+        if (isDown) ctx.globalAlpha = 0.55;
         drawCharacter(ctx, role, variant);
         ctx.restore();
         ctx.font = "bold 11px 'Noto Sans JP'";
         ctx.textAlign = "center";
         ctx.strokeStyle = MC.brown;
         ctx.lineWidth = 3;
-        const tag = (isPlayer ? "★ " : "🤖 ") + name;
-        ctx.strokeText(tag, f.position.x, f.position.y - 48);
-        ctx.fillStyle = isPlayer ? MC.yellow : "#ccc";
-        ctx.fillText(tag, f.position.x, f.position.y - 48);
-        if (!isPlayer) {
+        const tag = (isPlayer ? "★ " : isDown ? "💫 " : "🤖 ") + name;
+        ctx.strokeText(tag, f.position.x, f.position.y - 52);
+        ctx.fillStyle = isPlayer ? MC.yellow : isDown ? "#999" : "#ccc";
+        ctx.fillText(tag, f.position.x, f.position.y - 52);
+        if (!isPlayer && !isDown) {
           ctx.font = "9px sans-serif";
           ctx.fillStyle = "rgba(100,100,100,0.8)";
-          ctx.fillText("AUTO", f.position.x, f.position.y - 36);
+          ctx.fillText(isClerk ? "店員" : role === "customer" ? "300円投げ" : "配達", f.position.x, f.position.y - 40);
+        }
+        if (!isDown) {
+          const maxHp = ROSTER.find(r => r.id === id)?.hp || MAX_HP;
+          drawHpBar(ctx, f.position.x, f.position.y - 58, hpMap[id], maxHp);
         }
       }
-      for (const b of burgers) {
+      for (const p of projectiles) {
         ctx.save();
-        ctx.translate(b.position.x, b.position.y);
-        ctx.rotate(b.angle);
-        drawBurger(ctx, b.plugin.isBag);
+        ctx.translate(p.position.x, p.position.y);
+        ctx.rotate(p.angle);
+        if (p.plugin.ptype === "coin") drawCoin(ctx);
+        else drawBurger(ctx, p.plugin.ptype);
         ctx.restore();
       }
     });
@@ -915,6 +1190,10 @@
 
     setInterval(() => {
       for (const f of fighters) {
+        if (fallen.has(f.plugin.id)) {
+          Body.setVelocity(f, { x: f.velocity.x * 0.95, y: f.velocity.y * 0.95 });
+          continue;
+        }
         Body.applyForce(f, f.position, {
           x: (f.plugin.ax - f.position.x) * 0.00006,
           y: (f.plugin.ay - f.position.y) * 0.00006,
@@ -923,14 +1202,14 @@
       }
     }, 50);
 
-    // 🤖 ロボAI — プレイヤーを狙って連続投げ
     setInterval(runBotAI, 350);
 
     setInterval(() => {
-      if (!playerId || Math.random() > 0.25) return;
-      const bots = ROSTER.filter(r => r.id !== playerId);
+      if (!playerId || gameResult || Math.random() > 0.22) return;
+      const bots = ROSTER.filter(r => r.id !== playerId && !fallen.has(r.id));
+      if (!bots.length) return;
       const f = bots[Math.floor(Math.random() * bots.length)];
-      speak(f, randomLine(f, "throw"));
+      speak(f, randomLine(f, "idle"));
     }, 5000);
   </script>
 </body>
