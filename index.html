@@ -304,9 +304,9 @@
     const { Engine, Render, Runner, Bodies, Body, Composite, Events, Vector } = Matter;
 
     const W = 960, H = 640;
-    const COUNTER_Y = H * 0.48;
-    const KITCHEN_Y = COUNTER_Y - 72;
-    const FLOOR_Y = COUNTER_Y + 88;
+    const COUNTER_Y = H * 0.50;
+    const KITCHEN_Y = COUNTER_Y - 58;
+    const FLOOR_Y = COUNTER_Y + 58;
     const MAX_DRIFT = 45;
     const MAX_SPEED = 2.8;
     const wrap = document.getElementById("wrap");
@@ -317,35 +317,35 @@
     const MC = { red: "#DA291C", yellow: "#FFC72C", cream: "#F5EBDC", brown: "#27251F" };
     const UBER_SIGNUP_URL = "https://www.uber.com/signup/drive/deliver/?invite_code=zzzxa28";
 
-    const MAX_HP = 100;
-    const CLERK_HP = 130;
-    const DAMAGE = { burger: 15, coin: 13, bag: 12 };
+    const MAX_HP = 70;
+    const CLERK_HP = 55;
+    const DAMAGE = { burger: 22, coin: 20, bag: 18 };
     const CLERK_IDS = ["yui", "takuya"];
 
     const ROSTER = [
       {
         id: "yui", name: "ゆい", emoji: "👧", role: "cute-clerk", side: "kitchen",
-        x: 0.38, y: KITCHEN_Y / H,
+        x: 0.35, y: KITCHEN_Y / H,
         hp: CLERK_HP, isClerk: true,
         skin: "#f5c89a", hair: "#3d2314",
         voice: { pitch: 1.45, rate: 1.1 },
         lines: {
           throw: ["バーガーどうぞ！", "いっけー！", "当てちゃう！", "注文お待たせ！"],
-          hit: ["きゃっ！", "痛い…！", "まだ立つ！", "負けないもん！"],
-          idle: ["いらっしゃいませ〜♪", "今日も可愛く！", "エムドナルド！", "バンッ！"],
+          hit: ["きゃっ！", "もう無理…", "疲れた…", "うう…"],
+          idle: ["いらっしゃいませ…", "シフト長い…", "バーガー…", "眠い…"],
           fall: ["うわぁ…", "店長ー助けて…"],
         },
       },
       {
         id: "takuya", name: "タクヤ", emoji: "😎", role: "handsome", side: "kitchen",
-        x: 0.62, y: KITCHEN_Y / H,
+        x: 0.65, y: KITCHEN_Y / H,
         hp: CLERK_HP, isClerk: true,
         skin: "#e8b88a", hair: "#1a1a1a",
         voice: { pitch: 0.82, rate: 1.0 },
         lines: {
           throw: ["イケメン直球！", "見てろ！", "決めた！", "これがプロ！"],
-          hit: ["…まあいい", "ナイスショット", "まだ余裕", "強いな…"],
-          idle: ["イケメン店員", "モテるレジ", "タクヤです", "スマイルで"],
+          hit: ["…う", "シフト終わらない", "疲れた", "もう…"],
+          idle: ["イケメンだけど疲れた", "モニター見てる", "バーガー投げ", "燃え尽き…"],
           fall: ["くっ…！", "負けた…"],
         },
       },
@@ -353,7 +353,7 @@
         id: "ken", name: "ケン", emoji: "🛵", role: "courier", side: "floor",
         x: 0.28, y: FLOOR_Y / H,
         hp: MAX_HP, isClerk: false,
-        skin: "#d4a574", hair: "#111",
+        skin: "#c68642", hair: "#2c1810", beard: true,
         voice: { pitch: 0.95, rate: 1.0 },
         lines: {
           throw: ["配達投げ！", "Uber Eats！", "届ける！", "ケン行く！"],
@@ -703,6 +703,82 @@
       }
     }
 
+    function drawMacMonitor(ctx, x, y) {
+      // Mac風モニター（レジ用）
+      ctx.fillStyle = "#d1d5db";
+      ctx.fillRect(x - 34, y - 42, 68, 44);
+      const sg = ctx.createLinearGradient(x - 30, y - 38, x + 30, y - 2);
+      sg.addColorStop(0, "#60a5fa");
+      sg.addColorStop(1, "#3b82f6");
+      ctx.fillStyle = sg;
+      ctx.fillRect(x - 30, y - 38, 60, 34);
+      ctx.fillStyle = "#fff";
+      ctx.font = "7px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("ORDER", x, y - 22);
+      ctx.fillText("#042", x, y - 12);
+      ctx.fillStyle = "#9ca3af";
+      ctx.fillRect(x - 10, y + 2, 20, 8);
+      ctx.fillStyle = "#e5e7eb";
+      ctx.fillRect(x - 18, y + 10, 36, 4);
+    }
+
+    function drawFancyCounter(ctx, cy) {
+      const cw = W * 0.90;
+      const cx = (W - cw) / 2;
+      const ch = 36;
+      const topY = cy - ch / 2 + counterBounce;
+
+      // カウンター前面（厚み・光沢）
+      const frontG = ctx.createLinearGradient(0, topY, 0, topY + ch + 10);
+      frontG.addColorStop(0, "#3d3d3d");
+      frontG.addColorStop(0.3, "#1a1a1a");
+      frontG.addColorStop(0.7, "#0d0d0d");
+      frontG.addColorStop(1, "#000");
+      ctx.fillStyle = frontG;
+      ctx.fillRect(cx, topY, cw, ch + 8);
+
+      // 光沢ハイライト
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.fillRect(cx + 8, topY + 4, cw - 16, 6);
+
+      // 黄色ライン（店舗アクセント）
+      ctx.fillStyle = MC.yellow;
+      ctx.fillRect(cx, topY - 3, cw, 4);
+
+      // 天板（商品置き場）
+      ctx.fillStyle = "#252525";
+      ctx.fillRect(cx, topY - 14, cw, 12);
+      ctx.strokeStyle = "#555";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(cx, topY - 14, cw, 12);
+
+      // 商品ディスプレイ
+      const prods = [
+        { x: cx + 70, t: "burger" }, { x: cx + 150, t: "fries" },
+        { x: cx + cw - 150, t: "burger" }, { x: cx + cw - 70, t: "drink" },
+        { x: cx + cw / 2 - 90, t: "fries" }, { x: cx + cw / 2 + 90, t: "drink" },
+      ];
+      prods.forEach(p => drawCounterProduct(ctx, p.x, topY - 18, p.t));
+
+      // Macモニター（カウンター中央）
+      drawMacMonitor(ctx, W / 2, topY - 8);
+
+      // サイドレジ
+      ctx.fillStyle = "#2d2d2d";
+      ctx.fillRect(cx + 24, topY - 32, 48, 22);
+      ctx.fillStyle = MC.yellow;
+      ctx.font = "7px 'Noto Sans JP'";
+      ctx.textAlign = "center";
+      ctx.fillText("POS", cx + 48, topY - 18);
+
+      ctx.fillStyle = "rgba(255,199,44,0.85)";
+      ctx.font = "bold 11px 'Noto Sans JP'";
+      ctx.fillText("━━ カウンター ━━", W / 2, topY + ch + 2);
+
+      return { cx, topY, cw, ch };
+    }
+
     function drawStore(ctx) {
       const shakeX = screenShake ? (Math.random() - 0.5) * screenShake : 0;
       const shakeY = screenShake ? (Math.random() - 0.5) * screenShake : 0;
@@ -712,43 +788,38 @@
       ctx.fillStyle = MC.cream;
       ctx.fillRect(0, 0, W, H);
 
-      // ── キッチン側（カウンターより上）──
-      const kg = ctx.createLinearGradient(0, 0, 0, COUNTER_Y);
-      kg.addColorStop(0, "#2c3e50");
-      kg.addColorStop(0.5, "#4a5568");
-      kg.addColorStop(1, "#718096");
+      // ── キッチン側（温かみのある厨房）──
+      const kg = ctx.createLinearGradient(0, 60, 0, COUNTER_Y);
+      kg.addColorStop(0, "#4a3728");
+      kg.addColorStop(0.4, "#6b4423");
+      kg.addColorStop(1, "#8B6914");
       ctx.fillStyle = kg;
       ctx.fillRect(0, 60, W, COUNTER_Y - 60);
 
-      // 換気口・厨房設備
-      ctx.fillStyle = "#1a202c";
-      ctx.fillRect(60, 70, 120, 40);
-      ctx.fillRect(W - 180, 70, 120, 40);
-      ctx.fillStyle = "#a0aec0";
-      ctx.font = "9px sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText("KITCHEN", W / 2, 95);
-
-      // ヒートランプ
-      for (let i = 0; i < 4; i++) {
-        const hx = 180 + i * 160;
-        ctx.fillStyle = "#333";
-        ctx.fillRect(hx - 30, 110, 60, 8);
-        ctx.fillStyle = "rgba(255,199,44,0.5)";
-        ctx.beginPath();
-        ctx.ellipse(hx, 130, 28, 12, 0, 0, Math.PI * 2);
-        ctx.fill();
+      // タイル壁
+      for (let x = 0; x < W; x += 48) {
+        ctx.fillStyle = x % 96 ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)";
+        ctx.fillRect(x, 100, 48, COUNTER_Y - 100);
       }
 
-      // フライヤー（シルエット）
-      ctx.fillStyle = "#2d3748";
-      ctx.fillRect(40, COUNTER_Y - 55, 50, 45);
-      ctx.fillStyle = MC.yellow;
-      ctx.fillRect(48, COUNTER_Y - 48, 34, 6);
+      // ヒートランプ（かわいく）
+      for (let i = 0; i < 5; i++) {
+        const hx = 120 + i * 170;
+        ctx.fillStyle = "#444";
+        ctx.fillRect(hx - 28, 120, 56, 6);
+        const hg = ctx.createRadialGradient(hx, 138, 2, hx, 138, 24);
+        hg.addColorStop(0, "rgba(255,220,100,0.7)");
+        hg.addColorStop(1, "rgba(255,199,44,0)");
+        ctx.fillStyle = hg;
+        ctx.beginPath(); ctx.ellipse(hx, 138, 26, 10, 0, 0, Math.PI * 2); ctx.fill();
+      }
 
-      // ── 客席側（カウンターより下）──
-      ctx.fillStyle = MC.red;
-      ctx.fillRect(0, COUNTER_Y + 20, W, H - COUNTER_Y - 20);
+      // ── 客席側 ──
+      const fg = ctx.createLinearGradient(0, COUNTER_Y, 0, H);
+      fg.addColorStop(0, MC.red);
+      fg.addColorStop(1, "#a01010");
+      ctx.fillStyle = fg;
+      ctx.fillRect(0, COUNTER_Y + 24, W, H - COUNTER_Y - 24);
       const tile = 36;
       for (let y = COUNTER_Y + 40; y < H; y += tile) {
         for (let x = 0; x < W; x += tile) {
@@ -771,83 +842,53 @@
       ctx.fillStyle = MC.red;
       ctx.strokeStyle = MC.yellow;
       ctx.lineWidth = 3;
-      ctx.fillRect(W / 2 - 90, 8, 180, 48);
-      ctx.strokeRect(W / 2 - 90, 8, 180, 48);
-      drawGoldenArches(ctx, W / 2, 28, 38);
+      ctx.fillRect(W / 2 - 95, 6, 190, 46);
+      ctx.strokeRect(W / 2 - 95, 6, 190, 46);
+      drawGoldenArches(ctx, W / 2, 26, 34);
       ctx.fillStyle = MC.yellow;
-      ctx.font = "bold 12px 'Noto Sans JP'";
-      ctx.fillText("エムドナルド", W / 2, 50);
+      ctx.font = "bold 13px 'Noto Sans JP'";
+      ctx.fillText("エムドナルド", W / 2, 46);
 
-      // ── 黒カウンター（キッチンと客席の仕切り）──
-      const cw = W * 0.82;
-      const cx = (W - cw) / 2;
-      const cy = COUNTER_Y + counterBounce;
-      const ch = 22;
+      drawFancyCounter(ctx, COUNTER_Y);
 
-      // カウンター本体（黒・厚みあり）
-      const counterGrad = ctx.createLinearGradient(0, cy - 30, 0, cy + 10);
-      counterGrad.addColorStop(0, "#2a2a2a");
-      counterGrad.addColorStop(0.5, "#111");
-      counterGrad.addColorStop(1, "#000");
-      ctx.fillStyle = counterGrad;
-      ctx.fillRect(cx, cy - ch / 2 - 8, cw, ch + 8);
-      ctx.fillStyle = "#0a0a0a";
-      ctx.fillRect(cx, cy + ch / 2, cw, 6);
-
-      // カウンター上面（商品置き場）
-      ctx.fillStyle = "#1a1a1a";
-      ctx.fillRect(cx, cy - ch / 2 - 12, cw, 8);
-      ctx.strokeStyle = "#444";
-      ctx.lineWidth = 1;
-      ctx.strokeRect(cx, cy - ch / 2 - 12, cw, 8);
-
-      // ★ 商品（カウンター上）
-      const products = [
-        { x: cx + 80, type: "burger" },
-        { x: cx + 180, type: "fries" },
-        { x: cx + cw - 180, type: "burger" },
-        { x: cx + cw - 80, type: "drink" },
-      ];
-      products.forEach(p => drawCounterProduct(ctx, p.x, cy - ch / 2 - 18, p.type));
-
-      // レジ
-      ctx.fillStyle = "#333";
-      ctx.fillRect(W / 2 - 32, cy - 38, 64, 26);
-      ctx.fillStyle = MC.yellow;
-      ctx.font = "8px 'Noto Sans JP'";
-      ctx.fillText("REGISTER", W / 2, cy - 22);
-
-      // エリアラベル
-      ctx.fillStyle = "rgba(255,255,255,0.75)";
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
       ctx.font = "bold 10px 'Noto Sans JP'";
-      ctx.fillText("▲ キッチン側（店員）", W / 2, KITCHEN_Y - 20);
-      ctx.fillStyle = "rgba(39,37,31,0.7)";
-      ctx.fillText("▼ 客席側（お客・配達）", W / 2, FLOOR_Y + 30);
+      ctx.fillText("▲ キッチン（店員）", W / 2, KITCHEN_Y - 24);
+      ctx.fillStyle = "rgba(255,255,255,0.8)";
+      ctx.fillText("▼ 客席（お客・配達）", W / 2, FLOOR_Y + 36);
 
       ctx.restore();
     }
 
     function drawCounterProduct(ctx, x, y, type) {
+      ctx.save();
+      ctx.translate(x, y);
       if (type === "burger") {
-        ctx.fillStyle = "#8B4513";
-        ctx.fillRect(x - 14, y - 4, 28, 8);
-        ctx.fillStyle = "#f39c12";
-        ctx.fillRect(x - 12, y - 8, 24, 5);
-        ctx.fillStyle = "#27ae60";
-        ctx.fillRect(x - 10, y - 11, 20, 3);
+        ctx.fillStyle = "#7b4a1a";
+        ctx.beginPath(); ctx.ellipse(0, 4, 13, 5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#f39c12"; ctx.fillRect(-11, -1, 22, 5);
+        ctx.fillStyle = "#27ae60"; ctx.fillRect(-9, -5, 18, 3);
+        ctx.fillStyle = "#8B6914";
+        ctx.beginPath(); ctx.ellipse(0, -7, 12, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = MC.yellow;
+        ctx.font = "bold 6px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText("M", 0, 2);
       } else if (type === "fries") {
         ctx.fillStyle = MC.red;
-        ctx.fillRect(x - 10, y - 14, 20, 16);
+        ctx.fillRect(-11, -6, 22, 18);
         ctx.fillStyle = MC.yellow;
-        for (let i = 0; i < 5; i++) {
-          ctx.fillRect(x - 8 + i * 3, y - 20 - (i % 2) * 3, 2, 8);
+        for (let i = 0; i < 6; i++) {
+          ctx.fillRect(-8 + i * 3, -14 - (i % 3) * 2, 2, 9);
         }
       } else {
         ctx.fillStyle = MC.red;
-        ctx.fillRect(x - 8, y - 16, 16, 18);
+        ctx.fillRect(-9, -12, 18, 20);
         ctx.fillStyle = "#fff";
-        ctx.fillRect(x - 6, y - 14, 12, 4);
+        ctx.fillRect(-7, -10, 14, 5);
+        ctx.fillStyle = "rgba(255,255,255,0.5)";
+        ctx.fillRect(-6, -2, 12, 8);
       }
+      ctx.restore();
     }
 
     Events.on(render, "beforeRender", () => drawStore(render.context));
@@ -857,7 +898,7 @@
       Bodies.rectangle(W/2, H + 20, W, 40, { isStatic: true, render: { visible: false } }),
       Bodies.rectangle(-20, H/2, 40, H, { isStatic: true, render: { visible: false } }),
       Bodies.rectangle(W + 20, H/2, 40, H, { isStatic: true, render: { visible: false } }),
-      Bodies.rectangle(W/2, COUNTER_Y, W * 0.82, 24, { isStatic: true, render: { visible: false } }),
+      Bodies.rectangle(W/2, COUNTER_Y, W * 0.90, 40, { isStatic: true, render: { visible: false } }),
     ]);
 
     const fighters = ROSTER.map(r => {
@@ -874,9 +915,9 @@
 
     function fighterBounds(side) {
       if (side === "kitchen") {
-        return { minX: 100, maxX: W - 100, minY: 130, maxY: COUNTER_Y - 36 };
+        return { minX: 100, maxX: W - 100, minY: 130, maxY: COUNTER_Y - 52 };
       }
-      return { minX: 80, maxX: W - 80, minY: COUNTER_Y + 36, maxY: H - 70 };
+      return { minX: 80, maxX: W - 80, minY: COUNTER_Y + 52, maxY: H - 60 };
     }
 
     function constrainFighter(f) {
@@ -1020,7 +1061,7 @@
           { quiet: true }
         );
         const isClerk = bot.plugin.isClerk;
-        botThrowReady.set(id, now + (isClerk ? 550 : 850) + Math.random() * (isClerk ? 650 : 950));
+        botThrowReady.set(id, now + (isClerk ? 380 : 700) + Math.random() * (isClerk ? 420 : 600));
       }
     }
 
@@ -1070,7 +1111,9 @@
         hitCooldown.set(key, true);
         setTimeout(() => hitCooldown.delete(key), 180);
 
-        const dmg = DAMAGE[proj.plugin.ptype] || 12;
+        let dmg = DAMAGE[proj.plugin.ptype] || 12;
+        if (victim.plugin.isClerk) dmg = Math.round(dmg * 1.2);
+        if (victim.plugin.id === playerId) dmg = Math.round(dmg * 1.15);
         hpMap[victim.plugin.id] -= dmg;
 
         if (proj.plugin.shooterId === playerId) {
@@ -1219,115 +1262,143 @@
       ctx.fillStyle = MC.red;
       ctx.fillRect(-16, -32, 32, 11);
     }
+    function drawCuteBlush(ctx) {
+      ctx.fillStyle = "rgba(255,150,150,0.45)";
+      ctx.beginPath();
+      ctx.ellipse(-14, -2, 6, 4, 0, 0, Math.PI * 2);
+      ctx.ellipse(14, -2, 6, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    function drawBurnedOut(ctx) {
+      ctx.fillStyle = "rgba(80,60,120,0.35)";
+      ctx.beginPath();
+      ctx.ellipse(-7, -4, 6, 3, 0, 0, Math.PI * 2);
+      ctx.ellipse(7, -4, 6, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(100,180,255,0.6)";
+      ctx.beginPath(); ctx.ellipse(16, -18, 3, 5, 0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#555";
+      ctx.font = "8px sans-serif";
+      ctx.fillText("疲", -20, -24);
+    }
+    function drawMessyBeard(ctx, skin) {
+      ctx.fillStyle = "#3d2314";
+      for (let i = -4; i <= 4; i++) {
+        ctx.beginPath();
+        ctx.ellipse(i * 3, 6 + Math.abs(i), 4, 8, i * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = darken(skin, 15);
+      ctx.beginPath(); ctx.ellipse(0, 4, 12, 8, 0, 0, Math.PI); ctx.fill();
+    }
     function drawPerson3D(ctx, data, opts = {}) {
-      const { skin, hair, role } = data;
+      const { skin, hair, role, isClerk, beard } = data;
       const sleeping = opts.sleeping;
       const windUp = opts.windUp || 0;
+      const scale = 1.08;
 
+      ctx.scale(scale, scale);
       drawShadow(ctx);
 
-      // 足
-      ctx.fillStyle = "#222";
-      ctx.fillRect(-11, 48, 9, 16); ctx.fillRect(2, 48, 9, 16);
+      ctx.fillStyle = "#333";
+      ctx.fillRect(-10, 46, 8, 14);
+      ctx.fillRect(2, 46, 8, 14);
 
       if (role === "courier") {
-        // ボロボロUberバッグ
-        const bg = ctx.createLinearGradient(-28, 0, 28, 40);
-        bg.addColorStop(0, "#0a8040");
-        bg.addColorStop(1, "#044020");
+        const bg = ctx.createLinearGradient(-30, 0, 30, 44);
+        bg.addColorStop(0, "#1a9e55");
+        bg.addColorStop(1, "#064020");
         ctx.fillStyle = bg;
-        ctx.fillRect(-26, 8, 52, 42);
-        ctx.strokeStyle = "#333";
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(-20, 15); ctx.lineTo(-10, 35); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(15, 20); ctx.lineTo(22, 40); ctx.stroke();
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.fillRect(-26, 8, 52, 8);
+        ctx.fillRect(-28, 6, 56, 44);
+        ctx.strokeStyle = "#222";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(-22, 12); ctx.lineTo(-8, 38); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(18, 14); ctx.lineTo(24, 42); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-5, 20); ctx.lineTo(8, 35); ctx.stroke();
+        ctx.fillStyle = "rgba(0,0,0,0.35)";
+        ctx.fillRect(-28, 6, 56, 10);
         ctx.fillStyle = "#fff";
         ctx.font = "bold 7px sans-serif";
-        ctx.fillText("Uber", 0, 30);
-        ctx.fillStyle = "#888";
-        ctx.fillRect(-28, 12, 8, 20);
-        ctx.fillRect(20, 12, 8, 20);
+        ctx.textAlign = "center";
+        ctx.fillText("Uber", 0, 28);
+        ctx.fillStyle = "#06C167";
+        ctx.fillRect(-24, 12, 48, 28);
       } else if (role === "customer") {
-        const cg = ctx.createLinearGradient(-22, 14, 22, 50);
-        cg.addColorStop(0, "#4aa3df");
+        const cg = ctx.createLinearGradient(-22, 12, 22, 48);
+        cg.addColorStop(0, "#5dade2");
         cg.addColorStop(1, "#2471a3");
         ctx.fillStyle = cg;
-        ctx.fillRect(-22, 14, 44, 36);
+        ctx.fillRect(-22, 12, 44, 34);
         ctx.fillStyle = "#1a5276";
-        ctx.fillRect(-20, 50, 40, 14);
-        // 300円を掴む
-        const coinX = 20 + (windUp ? -8 : 0);
-        const coinY = 10 + (windUp ? -6 : 0);
+        ctx.fillRect(-20, 46, 40, 12);
+        // ポケットの300円
+        ctx.fillStyle = "#2980b9";
+        ctx.fillRect(8, 28, 16, 14);
+        ctx.strokeStyle = "#1a5276";
+        ctx.strokeRect(8, 28, 16, 14);
         ctx.fillStyle = "#f1c40f";
-        ctx.beginPath(); ctx.arc(coinX, coinY, 10 + windUp * 3, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "#d4ac0d"; ctx.lineWidth = 2; ctx.stroke();
+        ctx.beginPath(); ctx.arc(16, 35, 7, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "#b7950b";
-        ctx.font = "bold 7px sans-serif";
-        ctx.fillText("300", coinX, coinY + 2);
+        ctx.font = "bold 5px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("300", 16, 36);
+        if (windUp > 0.3) {
+          ctx.fillStyle = "#f1c40f";
+          ctx.beginPath(); ctx.arc(-18 + windUp * -6, 0, 9 + windUp * 4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = "#b7950b";
+          ctx.font = "bold 6px sans-serif";
+          ctx.fillText("300", -18 + windUp * -6, 2);
+        }
       } else {
         drawUniform3D(ctx);
       }
 
-      // 体・首
-      if (role !== "courier" && role !== "customer") {
-        /* uniform already drawn */
-      } else if (role === "courier") {
-        ctx.fillStyle = "#06C167";
-        ctx.fillRect(-22, 14, 44, 34);
-      }
+      ctx.fillStyle = darken(skin, 8);
+      ctx.fillRect(-5, 0, 10, 10);
+      skinSphere(ctx, -10, skin, 21, 23);
 
-      // 首
-      ctx.fillStyle = darken(skin, 10);
-      ctx.fillRect(-5, 2, 10, 10);
-
-      // 顔
-      skinSphere(ctx, -8, skin, 20, 22);
-
-      // 髪
       ctx.fillStyle = hair;
       if (role === "cute-clerk") {
-        ctx.beginPath(); ctx.ellipse(0, -16, 22, 16, 0, Math.PI, 0); ctx.fill();
-        ctx.fillRect(-22, -16, 10, 36); ctx.fillRect(12, -16, 10, 36);
-        ctx.fillStyle = "#ff69b4";
-        ctx.beginPath(); ctx.arc(18, -10, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(0, -18, 24, 17, 0, Math.PI, 0); ctx.fill();
+        ctx.fillRect(-24, -18, 12, 38); ctx.fillRect(12, -18, 12, 38);
+        ctx.fillStyle = "#ff85a2";
+        ctx.beginPath(); ctx.arc(-20, -8, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(20, -8, 6, 0, Math.PI * 2); ctx.fill();
       } else if (role === "handsome") {
-        ctx.beginPath(); ctx.ellipse(0, -18, 21, 13, 0, Math.PI, 0); ctx.fill();
-        ctx.fillStyle = MC.yellow;
-        ctx.font = "9px sans-serif";
-        ctx.fillText("✨", 20, -20);
+        ctx.beginPath(); ctx.ellipse(0, -20, 23, 14, 0, Math.PI, 0); ctx.fill();
       } else if (role === "courier") {
-        ctx.beginPath(); ctx.ellipse(0, -16, 20, 12, 0, Math.PI, 0); ctx.fill();
+        for (let i = -5; i <= 5; i++) {
+          ctx.beginPath();
+          ctx.ellipse(i * 4, -20 + Math.abs(i) * 1.5, 7, 16, i * 0.12, 0, Math.PI * 2);
+          ctx.fill();
+        }
         ctx.fillStyle = "#06C167";
-        ctx.fillRect(-18, -28, 36, 10);
+        ctx.fillRect(-20, -32, 40, 11);
       } else {
-        ctx.beginPath(); ctx.ellipse(0, -16, 19, 11, 0, Math.PI, 0); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(0, -18, 20, 12, 0, Math.PI, 0); ctx.fill();
       }
 
-      drawEyes3D(ctx, -8, role === "cute-clerk" || role === "handsome");
+      drawEyes3D(ctx, -10, true);
+      drawCuteBlush(ctx);
 
-      // 口
-      ctx.strokeStyle = darken(skin, 40);
+      if (isClerk) drawBurnedOut(ctx);
+      if (beard || role === "courier") drawMessyBeard(ctx, skin);
+
+      ctx.strokeStyle = darken(skin, 35);
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      if (sleeping) ctx.arc(0, 0, 4, 0, Math.PI);
-      else ctx.arc(0, 2, 4, 0.15 * Math.PI, 0.85 * Math.PI);
+      if (sleeping) ctx.arc(0, -2, 4, 0, Math.PI);
+      else if (isClerk) ctx.arc(0, 0, 3, 0.1 * Math.PI, 0.9 * Math.PI);
+      else ctx.arc(0, -2, 4, 0.15 * Math.PI, 0.85 * Math.PI);
       ctx.stroke();
 
-      // ほっぺ
-      if (role === "cute-clerk") {
-        ctx.fillStyle = "rgba(255,120,120,0.45)";
-        ctx.beginPath(); ctx.ellipse(-13, -2, 5, 3, 0, 0, Math.PI * 2); ctx.ellipse(13, -2, 5, 3, 0, 0, Math.PI * 2); ctx.fill();
-      }
-
       if (sleeping) {
-        ctx.fillStyle = "#555";
-        ctx.font = "bold 12px sans-serif";
-        ctx.fillText("Z", 22, -28);
-        ctx.font = "10px sans-serif";
-        ctx.fillText("z", 30, -34);
-        ctx.fillText("z", 36, -38);
+        ctx.fillStyle = "#666";
+        ctx.font = "bold 11px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("Z", 24, -30);
+        ctx.font = "9px sans-serif";
+        ctx.fillText("z z", 32, -36);
       }
     }
 
@@ -1460,6 +1531,20 @@
         else drawBurger(ctx, p.plugin.ptype);
         ctx.restore();
       }
+
+      // カウンター前面バーだけ再描画（キャラの上に黒ライン）
+      const cw = W * 0.90, cx = (W - cw) / 2, ch = 36;
+      const topY = COUNTER_Y - ch / 2 + counterBounce;
+      const fg = ctx.createLinearGradient(0, topY, 0, topY + ch);
+      fg.addColorStop(0, "#333"); fg.addColorStop(0.5, "#111"); fg.addColorStop(1, "#000");
+      ctx.fillStyle = fg;
+      ctx.fillRect(cx, topY, cw, ch);
+      ctx.fillStyle = MC.yellow;
+      ctx.fillRect(cx, topY - 3, cw, 4);
+      ctx.fillStyle = "rgba(255,199,44,0.9)";
+      ctx.font = "bold 11px 'Noto Sans JP'";
+      ctx.textAlign = "center";
+      ctx.fillText("━━ カウンター ━━", W / 2, topY + ch - 6);
     });
 
     Render.run(render);
