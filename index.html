@@ -92,7 +92,23 @@
     #combo { color: #FF6B9D; font-weight: 900; }
     #score { color: #06C167; font-weight: 900; }
 
-    #speech-bubble {
+    #bot-count { color: #636e72; font-weight: 900; }
+
+    #fight-hint {
+      position: absolute;
+      bottom: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 6;
+      font-size: 11px;
+      color: #27251F;
+      background: rgba(255,199,44,0.9);
+      padding: 4px 12px;
+      border-radius: 999px;
+      border: 2px solid #27251F;
+      pointer-events: none;
+      font-weight: 700;
+    }
       position: absolute;
       bottom: 16px;
       left: 50%;
@@ -208,10 +224,12 @@
     <div id="meta">
       <div class="row">
         <span id="player-label">キャラ選択中…</span>
+        <span id="bot-count">🤖 ロボ 0体</span>
         <span id="combo">COMBO x0</span>
         <span id="score">ヒット 0</span>
       </div>
     </div>
+    <div id="fight-hint">クリック長押しで連射！ロボ5体とバーガー合戦</div>
     <div id="speech-bubble"></div>
     <canvas id="canvas"></canvas>
   </div>
@@ -315,10 +333,16 @@
 
     let playerId = null;
     let playerHits = 0;
+    let playerHitTaken = 0;
     let combo = 0;
     let comboTimer = null;
     let soundOn = true;
     let audioCtx = null;
+    let playerThrowReady = true;
+    let holdingFire = false;
+    let holdFireTimer = null;
+    let lastAim = { x: W / 2, y: H / 2 };
+    const botThrowReady = new Map();
     const burgers = new Set();
     const hitCooldown = new Map();
     const scores = Object.fromEntries(ROSTER.map(r => [r.id, 0]));
@@ -350,6 +374,8 @@
       document.getElementById("score").textContent = "ヒット " + playerHits;
       const p = ROSTER.find(r => r.id === playerId);
       document.getElementById("player-label").textContent = p ? `${p.emoji} 操作中: ${p.name}` : "キャラを選んでね";
+      const bots = playerId ? ROSTER.length - 1 : 0;
+      document.getElementById("bot-count").textContent = playerId ? `🤖 ロボ ${bots}体 vs あなた` : "";
     }
     updateUI();
 
@@ -371,8 +397,11 @@
       updateUI();
       ensureAudio();
       const p = ROSTER.find(r => r.id === id);
-      showToast(`${p.emoji} ${p.name} で大乱闘スタート！`);
-      speak(p, "クリックでバーガー投げ！みんなと戦おう！");
+      showToast(`${p.emoji} ${p.name} vs 🤖ロボ5体 — バーガー合戦開始！`);
+      speak(p, "クリック連射でロボを倒せ！がんばれ！");
+      ROSTER.forEach(r => {
+        if (r.id !== id) botThrowReady.set(r.id, 0);
+      });
     }
 
     document.getElementById("btn-change").onclick = () => {
@@ -545,28 +574,66 @@
       return fighters.find(f => f.plugin.id === id);
     }
 
-    function spawnBurger(shooterBody, tx, ty) {
+    function spawnBurger(shooterBody, tx, ty, opts = {}) {
       const shooter = shooterBody.plugin;
       const from = shooterBody.position;
       const dir = Vector.normalise(Vector.sub({ x: tx, y: ty }, from));
       const isCourier = shooter.role === "courier";
+      const speed = opts.fast ? 22 : 20;
       const burger = Bodies.circle(from.x, from.y - 28, 14, {
         label: "burger",
         restitution: 0.92,
         frictionAir: 0.008,
         render: { visible: false },
-        plugin: { shooterId: shooter.id, isBag: isCourier },
+        plugin: { shooterId: shooter.id, isBag: isCourier, fromBot: shooter.id !== playerId },
       });
-      Body.setVelocity(burger, { x: dir.x * 19, y: dir.y * 19 });
+      Body.setVelocity(burger, { x: dir.x * speed, y: dir.y * speed });
       Body.setAngularVelocity(burger, (Math.random() - 0.5) * 0.35);
       Composite.add(world, burger);
       burgers.add(burger);
-      sfx("throw");
+      if (shooter.id === playerId || !opts.quiet) sfx("throw");
       if (shooter.id === playerId) speak(shooter, randomLine(shooter, "throw"));
-      showFx(from.x, from.y, "バンッ！", isCourier ? "#06C167" : MC.yellow);
+      const fxText = shooter.id === playerId ? "バンッ！" : "🤖";
+      showFx(from.x, from.y, fxText, isCourier ? "#06C167" : MC.yellow);
       setTimeout(() => {
         if (burgers.has(burger)) { Composite.remove(world, burger); burgers.delete(burger); }
-      }, 3500);
+      }, 3200);
+    }
+
+    function playerThrow(tx, ty) {
+      if (!playerId || !playerThrowReady) return;
+      const player = getFighterBody(playerId);
+      if (!player) return;
+      playerThrowReady = false;
+      spawnBurger(player, tx, ty, { fast: holdingFire });
+      setTimeout(() => { playerThrowReady = true; }, holdingFire ? 100 : 180);
+    }
+
+    function pickBotTarget(shooterBody) {
+      const player = getFighterBody(playerId);
+      if (player && Math.random() < 0.7) return player;
+      const others = fighters.filter(f => f.id !== shooterBody.id);
+      return others[Math.floor(Math.random() * others.length)];
+    }
+
+    function runBotAI() {
+      if (!playerId) return;
+      const now = Date.now();
+      for (const bot of fighters.filter(f => f.plugin.id !== playerId)) {
+        const id = bot.plugin.id;
+        const next = botThrowReady.get(id) || 0;
+        if (now < next) continue;
+        const target = pickBotTarget(bot);
+        if (!target) continue;
+        const spread = target.plugin.id === playerId ? 25 : 45;
+        spawnBurger(
+          bot,
+          target.position.x + (Math.random() - 0.5) * spread,
+          target.position.y + (Math.random() - 0.5) * spread,
+          { quiet: true }
+        );
+        botThrowReady.set(id, now + 700 + Math.random() * 900);
+      }
     }
 
     Events.on(engine, "collisionStart", ({ pairs }) => {
@@ -589,6 +656,14 @@
           comboTimer = setTimeout(() => { combo = 0; updateUI(); }, 1600);
           if (combo >= 3) sfx("combo");
         }
+        if (victim.plugin.id === playerId) {
+          playerHitTaken++;
+          combo = 0;
+          updateUI();
+          if (burger.plugin.fromBot) {
+            showToast(`🤖 ${ROSTER.find(r => r.id === burger.plugin.shooterId)?.name || "ロボ"}の攻撃！`);
+          }
+        }
         habit.total++;
         habit.todayHits++;
         saveHabit();
@@ -596,7 +671,9 @@
         const dir = Vector.normalise(Vector.sub(victim.position, burger.position));
         Body.applyForce(victim, victim.position, { x: dir.x * 0.14, y: dir.y * 0.14 });
         sfx("hit");
-        speak(victim.plugin, randomLine(victim.plugin, "hit"));
+        if (victim.plugin.id === playerId || burger.plugin.shooterId === playerId) {
+          speak(victim.plugin, randomLine(victim.plugin, "hit"));
+        }
         showFx(
           (burger.position.x + victim.position.x) / 2,
           (burger.position.y + victim.position.y) / 2,
@@ -608,15 +685,46 @@
       }
     });
 
-    wrap.addEventListener("click", e => {
-      if (!playerId || e.target.closest("#char-select")) return;
-      ensureAudio();
+    function canvasCoords(e) {
       const r = canvas.getBoundingClientRect();
-      const x = ((e.clientX - r.left) / r.width) * W;
-      const y = ((e.clientY - r.top) / r.height) * H;
-      const player = getFighterBody(playerId);
-      if (player) spawnBurger(player, x, y);
+      return {
+        x: ((e.clientX - r.left) / r.width) * W,
+        y: ((e.clientY - r.top) / r.height) * H,
+      };
+    }
+
+    function startHold(e) {
+      if (!playerId || e.target.closest("#char-select")) return;
+      e.preventDefault();
+      ensureAudio();
+      holdingFire = true;
+      const { x, y } = canvasCoords(e);
+      lastAim = { x, y };
+      playerThrow(x, y);
+      clearInterval(holdFireTimer);
+      holdFireTimer = setInterval(() => playerThrow(lastAim.x, lastAim.y), 120);
+    }
+
+    wrap.addEventListener("mousedown", startHold);
+    wrap.addEventListener("touchstart", startHold, { passive: false });
+
+    wrap.addEventListener("mousemove", e => {
+      if (!holdingFire) return;
+      lastAim = canvasCoords(e);
     });
+    wrap.addEventListener("touchmove", e => {
+      if (!holdingFire || !e.touches[0]) return;
+      lastAim = canvasCoords(e.touches[0]);
+    }, { passive: true });
+
+    const stopHold = () => {
+      holdingFire = false;
+      clearInterval(holdFireTimer);
+    };
+    wrap.addEventListener("mouseup", stopHold);
+    wrap.addEventListener("mouseleave", stopHold);
+    wrap.addEventListener("touchend", stopHold);
+    wrap.addEventListener("touchcancel", stopHold);
 
     // ── 描画 ──
     function skinGrad(ctx, y) {
@@ -783,10 +891,15 @@
         ctx.textAlign = "center";
         ctx.strokeStyle = MC.brown;
         ctx.lineWidth = 3;
-        const tag = (isPlayer ? "★ " : "") + name;
+        const tag = (isPlayer ? "★ " : "🤖 ") + name;
         ctx.strokeText(tag, f.position.x, f.position.y - 48);
-        ctx.fillStyle = isPlayer ? MC.yellow : "#fff";
+        ctx.fillStyle = isPlayer ? MC.yellow : "#ccc";
         ctx.fillText(tag, f.position.x, f.position.y - 48);
+        if (!isPlayer) {
+          ctx.font = "9px sans-serif";
+          ctx.fillStyle = "rgba(100,100,100,0.8)";
+          ctx.fillText("AUTO", f.position.x, f.position.y - 36);
+        }
       }
       for (const b of burgers) {
         ctx.save();
@@ -810,22 +923,15 @@
       }
     }, 50);
 
-    // NPC が互いにバーガーを投げ合う
-    setInterval(() => {
-      if (!playerId) return;
-      const npcs = fighters.filter(f => f.plugin.id !== playerId);
-      if (!npcs.length) return;
-      const shooter = npcs[Math.floor(Math.random() * npcs.length)];
-      const targets = fighters.filter(f => f.id !== shooter.id);
-      const target = targets[Math.floor(Math.random() * targets.length)];
-      spawnBurger(shooter, target.position.x + (Math.random() - 0.5) * 60, target.position.y);
-    }, 2200);
+    // 🤖 ロボAI — プレイヤーを狙って連続投げ
+    setInterval(runBotAI, 350);
 
     setInterval(() => {
-      if (!playerId || Math.random() > 0.35) return;
-      const f = ROSTER[Math.floor(Math.random() * ROSTER.length)];
-      speak(f, randomLine(f, "idle"));
-    }, 6000);
+      if (!playerId || Math.random() > 0.25) return;
+      const bots = ROSTER.filter(r => r.id !== playerId);
+      const f = bots[Math.floor(Math.random() * bots.length)];
+      speak(f, randomLine(f, "throw"));
+    }, 5000);
   </script>
 </body>
 </html>
